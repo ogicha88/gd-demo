@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f6fb" />
+    <title>GDデモ</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet" />
+    <style>
+      /* JS 読み込み前に表示する全画面スケルトン */
+      html,body{margin:0;background:#f4f6fb}
+      .boot{position:fixed;inset:0;padding:calc(env(safe-area-inset-top) + 18px) 18px 18px;display:flex;flex-direction:column;gap:16px;max-width:520px;margin:0 auto}
+      .boot i{display:block;border-radius:22px;background:linear-gradient(100deg,#e9edf5 30%,#f7f9fc 50%,#e9edf5 70%);background-size:300% 100%;animation:bootsh 1.3s linear infinite}
+      @keyframes bootsh{from{background-position:100% 0}to{background-position:0 0}}
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot" aria-busy="true">
+        <div style="display:flex;align-items:center;height:44px"><i style="width:110px;height:26px"></i></div>
+        <i style="height:220px;border-radius:30px"></i>
+        <div style="display:flex;gap:8px;justify-content:center"><i style="width:18px;height:6px"></i><i style="width:6px;height:6px"></i><i style="width:6px;height:6px"></i></div>
+        <i style="height:84px"></i><i style="height:84px"></i><i style="height:84px"></i>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
