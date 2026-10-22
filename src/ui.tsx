@@ -1,12 +1,5 @@
-import type { Role } from "../shared/data";
-
-export const ROLE_COLOR: Record<Role["key"], string> = {
-  facilitator: "#3d84f5",
-  timekeeper: "#f2a516",
-  scribe: "#22b07d",
-  presenter: "#f0548a",
-  member: "#8b7cf0",
-};
+// 役割としての発言に添えるラベル（話者番号順）
+export const ROLE_ACTION = ["進行", "時間管理", "記録・整理", "まとめ・発表", "意見"];
 
 export const spring = { type: "spring" as const, stiffness: 420, damping: 34 };
 export const softSpring = { type: "spring" as const, stiffness: 260, damping: 26 };

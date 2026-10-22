@@ -1,22 +1,22 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Script } from "../../shared/data";
-import { CHARACTERS, PHASES, TOTAL_MINUTES, rolesForSize } from "../../shared/data";
-import { Icon, ROLE_COLOR, haptic, spring } from "../ui";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { Script, ScriptLine } from "../../shared/data";
+import { CHARACTERS, PHASES, ROLES, TOTAL_MINUTES } from "../../shared/data";
+import { Icon, ROLE_ACTION, haptic, softSpring, spring } from "../ui";
+import { useSwipe } from "../useSwipe";
 import Avatar from "./Avatar";
 
 type Props = {
   script: Script;
   topicTitle: string;
-  cast: number[];
   onExit: () => void;
   onFinish: () => void;
 };
 
-const TYPE_MS = 32; // 1 文字あたりのタイピング時間
-const READ_MS = 45; // 1 文字あたりの読む時間
-const LINE_GAP_MS = 700;
-const BANNER_MS = 1300;
+const TYPE_MS = 26; // 1 文字あたりのタイピング時間
+const READ_MS = 38; // 1 文字あたりの読む時間
+const LINE_GAP_MS = 600;
+const BANNER_MS = 1100;
 const SPEEDS = [1, 1.5, 2];
 
 function fmt(sec: number) {
@@ -24,125 +24,235 @@ function fmt(sec: number) {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export default function Demo({ script, topicTitle, cast, onExit, onFinish }: Props) {
-  const { lines } = script;
-  const roles = rolesForSize(script.size);
-  const [idx, setIdx] = useState(0);
+// 各話者の役割が何行目で決まるか（決まるまでは役割を表示しない）
+function assignIndex(lines: ScriptLine[]) {
+  return ROLES.map((_, s) => {
+    const i = lines.findIndex((l) => l.s === s && l.assign);
+    return i < 0 ? 0 : i;
+  });
+}
+
+function Meta({ line, assigned }: { line: ScriptLine; assigned: boolean }) {
+  const role = ROLES[line.s];
+  return (
+    <div className="msg-meta">
+      {CHARACTERS[line.s].name}
+      {assigned && <i style={{ background: role.color }}>{role.name}</i>}
+      {line.role && <em style={{ color: role.color }}>{ROLE_ACTION[line.s]}</em>}
+    </div>
+  );
+}
+
+function bubbleStyle(line: ScriptLine) {
+  return line.role ? { borderLeftColor: ROLES[line.s].color } : undefined;
+}
+
+// 過去の発言（行が進んだときだけ再描画）
+const PastMessages = memo(function PastMessages({ lines, upto, assignAt }: { lines: ScriptLine[]; upto: number; assignAt: number[] }) {
+  return (
+    <>
+      {lines.slice(0, upto).map((l, i) => (
+        <div key={i} className="msg past">
+          <div className="msg-av">
+            <Avatar c={CHARACTERS[l.s]} size={40} />
+          </div>
+          <div className="msg-body">
+            <Meta line={l} assigned={assignAt[l.s] <= i} />
+            <div className={`bubble${l.role ? " role-line" : ""}${l.key ? " key-line" : ""}`} style={bubbleStyle(l)}>
+              {l.t}
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+});
+
+// 今話している発言（タイピング表示はこの中だけで更新する）
+function CurrentMessage({
+  line,
+  index,
+  assigned,
+  speed,
+  active,
+  onDone,
+  chatRef,
+}: {
+  line: ScriptLine;
+  index: number;
+  assigned: boolean;
+  speed: number;
+  active: boolean;
+  onDone: () => void;
+  chatRef: RefObject<HTMLDivElement | null>;
+}) {
   const [typed, setTyped] = useState(0);
+  const done = typed >= line.t.length;
+  useEffect(() => {
+    if (done) {
+      onDone();
+      return;
+    }
+    if (!active) return;
+    const t = setTimeout(() => setTyped((n) => n + 1), TYPE_MS / speed);
+    return () => clearTimeout(t);
+  }, [typed, active, speed]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [typed, chatRef]);
+
+  return (
+    <motion.div
+      key={index}
+      className="msg"
+      initial={{ opacity: 0, y: 18, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={spring}
+      style={{ originX: 0 }}
+    >
+      <div className="msg-av">
+        <Avatar c={CHARACTERS[line.s]} size={40} />
+      </div>
+      <div className="msg-body">
+        <Meta line={line} assigned={assigned} />
+        <div className={`bubble current${line.role ? " role-line" : ""}${line.key ? " key-line" : ""}`} style={bubbleStyle(line)} data-testid="current-bubble">
+          {line.t.slice(0, typed)}
+          {!done && <span className="caret" style={{ background: ROLES[line.s].color }} />}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+export default function Demo({ script, topicTitle, onExit, onFinish }: Props) {
+  const { lines } = script;
+  const [idx, setIdx] = useState(0);
+  const [lineDone, setLineDone] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [banner, setBanner] = useState(true);
+  const [keyOpen, setKeyOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
+  const acked = useRef(new Set<number>());
   const chatRef = useRef<HTMLDivElement>(null);
   const line = lines[idx];
-  const done = typed >= line.t.length;
-  const active = playing && !boardOpen;
+  const role = ROLES[line.s];
+  const active = playing && !boardOpen && !keyOpen;
+  const assignAt = useMemo(() => assignIndex(lines), [lines]);
 
-  // フェーズが変わったらバナーを出す
-  useEffect(() => {
-    if (idx === 0 || lines[idx - 1].p !== line.p) setBanner(true);
-  }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  function goTo(next: number, opts: { skipKey?: boolean } = {}) {
+    if (next < 0) return;
+    if (next >= lines.length) {
+      onFinish();
+      return;
+    }
+    if (opts.skipKey) acked.current.add(next);
+    setKeyOpen(false);
+    setLineDone(false);
+    setBanner(lines[next].p !== lines[idx].p);
+    setIdx(next);
+  }
 
+  // フェーズの切り替わりで出すバナー
   useEffect(() => {
     if (!banner || !active) return;
     const t = setTimeout(() => setBanner(false), BANNER_MS / speed);
     return () => clearTimeout(t);
   }, [banner, active, speed]);
 
-  // タイピング → 読む時間 → 次の発言
+  // 発言を読み終えたら次へ（重要場面なら解説を出して止まる）
   useEffect(() => {
-    if (!active || banner) return;
-    if (!done) {
-      const t = setTimeout(() => setTyped((n) => n + 1), TYPE_MS / speed);
+    if (!lineDone || !active) return;
+    if (line.key && !acked.current.has(idx)) {
+      const t = setTimeout(() => {
+        haptic(14);
+        setKeyOpen(true);
+      }, 350);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(
-      () => {
-        if (idx < lines.length - 1) {
-          setIdx(idx + 1);
-          setTyped(0);
-        } else {
-          onFinish();
-        }
-      },
-      (LINE_GAP_MS + line.t.length * READ_MS) / speed,
-    );
+    const t = setTimeout(() => goTo(idx + 1), (LINE_GAP_MS + line.t.length * READ_MS) / speed);
     return () => clearTimeout(t);
-  }, [active, banner, done, typed, idx, speed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineDone, active, idx, speed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 解説カードの出し入れでチャット欄の高さが変わるので、最新の発言が見えるようにスクロールし直す
   useEffect(() => {
     const el = chatRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: typed === 0 ? "smooth" : "auto" });
-  }, [idx, typed]);
+    if (!el) return;
+    const toBottom = () => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const timers = [setTimeout(toBottom, 60), setTimeout(toBottom, 450)];
+    return () => timers.forEach(clearTimeout);
+  }, [keyOpen]);
+
+  function continueFromKey() {
+    acked.current.add(idx);
+    haptic();
+    goTo(idx + 1);
+  }
+
+  function step(d: number) {
+    haptic();
+    if (d > 0 && keyOpen) return continueFromKey();
+    if (d > 0) acked.current.add(idx);
+    goTo(idx + d, { skipKey: d < 0 });
+  }
+
+  const swipe = useSwipe({ onLeft: () => step(1), onRight: () => step(-1) }, 60);
 
   // デスクトップ用のキーボード操作
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === " ") {
         e.preventDefault();
-        setPlaying((p) => !p);
-      } else if (e.key === "ArrowRight") step(1);
+        if (keyOpen) continueFromKey();
+        else setPlaying((p) => !p);
+      } else if (e.key === "ArrowRight" || e.key === "Enter") step(1);
       else if (e.key === "ArrowLeft") step(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  function step(d: number) {
-    const next = idx + d;
-    if (next < 0) return;
-    if (next >= lines.length) {
-      onFinish();
-      return;
-    }
-    haptic();
-    setBanner(false);
-    setIdx(next);
-    setTyped(d > 0 ? 0 : lines[next].t.length);
-  }
-
-  // 模擬タイマー（20 分のGDを圧縮して表示）
+  // 模擬タイマー（20 分の GD を圧縮して表示）
   const remaining = useMemo(() => {
     const inPhase = lines.filter((l) => l.p === line.p);
-    const pos = inPhase.indexOf(line) + typed / Math.max(1, line.t.length);
+    const pos = inPhase.indexOf(line) + (lineDone ? 1 : 0.5);
     const before = PHASES.slice(0, line.p).reduce((a, p) => a + p.minutes, 0);
-    const elapsed = before + (pos / inPhase.length) * PHASES[line.p].minutes;
-    return (TOTAL_MINUTES - elapsed) * 60;
-  }, [line, typed, lines]);
+    return (TOTAL_MINUTES - before - (pos / inPhase.length) * PHASES[line.p].minutes) * 60;
+  }, [line, lineDone, lines]);
 
   const phaseProgress = (p: number) => {
-    if (p < line.p) return 1;
-    if (p > line.p) return 0;
+    if (p !== line.p) return p < line.p ? 1 : 0;
     const inPhase = lines.filter((l) => l.p === p);
-    return (inPhase.indexOf(line) + (done ? 1 : typed / line.t.length)) / inPhase.length;
+    return (inPhase.indexOf(line) + (lineDone ? 1 : 0.5)) / inPhase.length;
   };
 
-  const notes = lines
-    .slice(0, idx + 1)
-    .map((l, i) => ({ ...l, i }))
-    .filter((l) => l.note && (l.i < idx || done));
-
-  const seats = cast.map((_, i) => {
-    const a = (-90 + (360 / cast.length) * i) * (Math.PI / 180);
-    return { x: 50 + 40 * Math.cos(a), y: 48 + 34 * Math.sin(a) };
-  });
+  const notes = lines.slice(0, idx + 1).flatMap((l, i) => (l.note && (i < idx || lineDone) ? [{ ...l, i }] : []));
+  const speaking = (s: number) => line.s === s && !banner;
 
   return (
     <motion.div
       className="screen demo"
-      initial={{ opacity: 0, y: 60 }}
+      initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={spring}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={softSpring}
       data-testid="demo-screen"
+      data-key-open={keyOpen ? "1" : "0"}
     >
+      <motion.div
+        className="tint-layer"
+        initial={false}
+        animate={{ opacity: keyOpen ? 1 : 0, backgroundColor: role.tint }}
+        transition={{ duration: 0.45 }}
+      />
+
       <div className="demo-top">
         <motion.button className="glass icon-btn" whileTap={{ scale: 0.9 }} onClick={onExit} aria-label="閉じる" data-testid="demo-close">
           <Icon.Close />
         </motion.button>
         <div className="demo-title">
           <b>{topicTitle}</b>
-          <span>{script.size}人</span>
         </div>
         <div className="glass clock" data-testid="clock">{fmt(remaining)}</div>
       </div>
@@ -150,191 +260,173 @@ export default function Demo({ script, topicTitle, cast, onExit, onFinish }: Pro
       <div className="phasebar">
         {PHASES.map((p, i) => (
           <div className="phase-seg" key={p.name}>
-            <motion.div animate={{ width: `${phaseProgress(i) * 100}%` }} transition={{ duration: 0.25 }} />
+            <motion.div animate={{ scaleX: phaseProgress(i) }} transition={{ duration: 0.4 }} />
           </div>
         ))}
       </div>
       <div className="phase-name">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" initial={false}>
           <motion.span key={line.p} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} data-testid="phase-name">
-            {line.p + 1}. {PHASES[line.p].name}
+            {PHASES[line.p].name}
           </motion.span>
         </AnimatePresence>
-        <span>{idx + 1} / {lines.length}</span>
+        <span data-testid="counter">{idx + 1} / {lines.length}</span>
       </div>
 
-      <motion.div
-        style={{ display: "contents" }}
-        onPanEnd={(_, info) => {
-          if (Math.abs(info.offset.x) > 50 && Math.abs(info.offset.x) > Math.abs(info.offset.y) * 1.3) step(info.offset.x < 0 ? 1 : -1);
+      <div
+        className="glass seats"
+        onClick={() => {
+          if (keyOpen) return;
+          haptic();
+          setPlaying((p) => !p);
         }}
+        data-testid="stage"
       >
-        <motion.div
-          className="stage"
-          onTap={() => {
-            haptic();
-            setPlaying((p) => !p);
-          }}
-          data-testid="stage"
-        >
-          <div className="glass table" />
-          {cast.map((ci, i) => {
-            const speaking = line.s === i && !banner;
-            return (
-              <motion.div
-                key={i}
-                className="seat"
-                style={{ left: `${seats[i].x}%`, top: `${seats[i].y}%`, zIndex: speaking ? 3 : 1 }}
-                animate={{ scale: speaking ? 1.16 : 1 }}
-                transition={spring}
-              >
-                <AnimatePresence>
-                  {speaking && (
-                    <motion.div
-                      className="halo"
-                      style={{ background: `radial-gradient(circle, ${ROLE_COLOR[roles[i].key]}55 0%, transparent 70%)` }}
-                      initial={{ opacity: 0, scale: 0.5 }}
-                      animate={{ opacity: [0.6, 1, 0.6], scale: [1, 1.15, 1] }}
-                      exit={{ opacity: 0, scale: 0.5 }}
-                      transition={{ duration: 1.4, repeat: Infinity }}
-                    />
-                  )}
-                </AnimatePresence>
-                <Avatar c={CHARACTERS[ci]} size={46} talking={speaking && !done && active} dim={!speaking} />
-                <span className="seat-role" style={{ background: ROLE_COLOR[roles[i].key] }}>
-                  {roles[i].short}
-                </span>
-              </motion.div>
-            );
-          })}
+        {ROLES.map((r, s) => {
+          const assigned = assignAt[s] < idx || (assignAt[s] === idx && lineDone);
+          const on = speaking(s);
+          return (
+            <motion.div key={s} className={`seat${on ? " on" : ""}`} animate={{ y: on ? -4 : 0, scale: on ? 1.08 : 1 }} transition={spring}>
+              <span className="seat-ring" style={{ borderColor: r.color, opacity: on ? 1 : 0 }} />
+              <Avatar c={CHARACTERS[s]} size={44} talking={on && !lineDone && active} />
+              <AnimatePresence mode="popLayout" initial={false}>
+                {assigned ? (
+                  <motion.span
+                    key="role"
+                    className="seat-role"
+                    style={{ background: r.color }}
+                    initial={{ scale: 0.3, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 18 }}
+                  >
+                    {r.short}
+                  </motion.span>
+                ) : (
+                  <motion.span key="none" className="seat-role none" exit={{ scale: 0.3, opacity: 0 }}>
+                    ？
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
 
-          <AnimatePresence>
-            {banner && (
-              <motion.div className="phase-banner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <motion.div
-                  className="glass"
-                  initial={{ scale: 0.7, y: 10 }}
-                  animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 1.1, opacity: 0 }}
-                  transition={spring}
-                  data-testid="phase-banner"
-                >
-                  <small>PHASE {line.p + 1}</small>
-                  <b>{PHASES[line.p].name}</b>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {!playing && (
-              <motion.div
-                className="phase-banner"
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.3 }}
-                transition={spring}
-              >
-                <div className="glass" style={{ padding: 16, borderRadius: "50%" }}>
-                  <Icon.Pause size={28} />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex" }}>
-          <div className="chat" ref={chatRef} style={{ flex: 1 }} data-testid="chat">
-            {lines.slice(0, idx + 1).map((l, i) => {
-              const c = CHARACTERS[cast[l.s]];
-              const role = roles[l.s];
-              const current = i === idx;
-              if (current && banner) return null;
-              return (
-                <motion.div
-                  key={i}
-                  className={`msg${current ? "" : " past"}`}
-                  initial={{ opacity: 0, y: 16, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={spring}
-                  style={{ originX: 0 }}
-                >
-                  <div className="msg-av">
-                    <Avatar c={c} size={40} />
-                  </div>
-                  <div className="msg-body">
-                    <div className="msg-meta">
-                      {c.name}
-                      <i style={{ background: ROLE_COLOR[role.key] }}>{role.name}</i>
-                    </div>
-                    <div className="glass bubble" data-testid={current ? "current-bubble" : undefined}>
-                      {current ? l.t.slice(0, typed) : l.t}
-                      {current && !done && <span className="caret" />}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          <AnimatePresence>
-            {line.tip && !banner && typed > 0 && (
-              <motion.div
-                key={idx}
-                className="glass tip"
-                style={{ top: 6, left: 0, right: 0 }}
-                initial={{ opacity: 0, y: -16, scale: 0.94 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.96 }}
-                transition={spring}
-                data-testid="tip"
-              >
-                <span className="tip-icon"><Icon.Bulb size={18} /></span>
-                <div>
-                  <small>POINT</small>
-                  <p>{line.tip}</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-
-      <div className="glass controls">
-        <motion.button className="ctrl speed" whileTap={{ scale: 0.88 }} onClick={() => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length])} data-testid="speed">
-          ×{speed}
-        </motion.button>
-        <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => step(-1)} aria-label="前へ" data-testid="prev">
-          <Icon.Prev />
-        </motion.button>
-        <motion.button className="play" whileTap={{ scale: 0.9 }} onClick={() => setPlaying((p) => !p)} aria-label={playing ? "一時停止" : "再生"} data-testid="play">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span key={String(playing)} initial={{ scale: 0, rotate: -90 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0, rotate: 90 }} transition={{ duration: 0.15 }} style={{ display: "grid" }}>
-              {playing ? <Icon.Pause size={26} /> : <Icon.Play size={26} />}
-            </motion.span>
-          </AnimatePresence>
-        </motion.button>
-        <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => step(1)} aria-label="次へ" data-testid="next">
-          <Icon.Next />
-        </motion.button>
-        <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => setBoardOpen(true)} aria-label="ボード" data-testid="board-btn">
-          <Icon.Board />
-          <AnimatePresence>
-            {notes.length > 0 && (
-              <motion.span key={notes.length} className="badge" initial={{ scale: 0 }} animate={{ scale: [1.5, 1] }} exit={{ scale: 0 }}>
-                {notes.length}
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </motion.button>
+        <AnimatePresence>
+          {banner && (
+            <motion.div
+              className="phase-pill"
+              initial={{ opacity: 0, y: 10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={spring}
+              data-testid="phase-banner"
+            >
+              <small>PHASE {line.p + 1}</small>
+              {PHASES[line.p].name}
+            </motion.div>
+          )}
+          {!playing && !banner && (
+            <motion.div className="phase-pill" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.1 }} transition={spring}>
+              <Icon.Pause size={18} />
+              一時停止中
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      <div className="chat" ref={chatRef} {...swipe} data-testid="chat">
+        <PastMessages lines={lines} upto={idx} assignAt={assignAt} />
+        {!banner && (
+          <CurrentMessage
+            key={idx}
+            line={line}
+            index={idx}
+            assigned={assignAt[line.s] < idx || (assignAt[line.s] === idx && lineDone)}
+            speed={speed}
+            active={active}
+            onDone={() => setLineDone(true)}
+            chatRef={chatRef}
+          />
+        )}
+      </div>
+
+      <AnimatePresence mode="wait" initial={false}>
+        {keyOpen && line.key ? (
+          <motion.div
+            key={`key-${idx}`}
+            className="key-card"
+            style={{ "--role": role.color } as React.CSSProperties}
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.97 }}
+            transition={softSpring}
+            data-testid="key-card"
+          >
+            <div className="key-head">
+              <span className="key-role" style={{ background: role.color }}>{role.name}のポイント</span>
+            </div>
+            <motion.h4 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+              {line.key.title}
+            </motion.h4>
+            <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}>
+              {line.key.why}
+            </motion.p>
+            <motion.button
+              className="key-next"
+              style={{ background: role.color }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={continueFromKey}
+              data-testid="key-next"
+            >
+              続きを見る
+              <Icon.Next size={18} />
+            </motion.button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="controls"
+            className="glass controls"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={spring}
+          >
+            <motion.button className="ctrl speed" whileTap={{ scale: 0.88 }} onClick={() => setSpeed((s) => SPEEDS[(SPEEDS.indexOf(s) + 1) % SPEEDS.length])} data-testid="speed">
+              ×{speed}
+            </motion.button>
+            <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => step(-1)} aria-label="前へ" data-testid="prev">
+              <Icon.Prev />
+            </motion.button>
+            <motion.button className="play" whileTap={{ scale: 0.9 }} onClick={() => setPlaying((p) => !p)} aria-label={playing ? "一時停止" : "再生"} data-testid="play">
+              {playing ? <Icon.Pause size={26} /> : <Icon.Play size={26} />}
+            </motion.button>
+            <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => step(1)} aria-label="次へ" data-testid="next">
+              <Icon.Next />
+            </motion.button>
+            <motion.button className="ctrl" whileTap={{ scale: 0.88 }} onClick={() => setBoardOpen(true)} aria-label="書記のボード" data-testid="board-btn">
+              <Icon.Board />
+              {notes.length > 0 && (
+                <span className="badge">
+                  {/* メモが増えるたびに数字だけ弾ませる */}
+                  <motion.span key={notes.length} initial={{ scale: 1.8 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 600, damping: 15 }}>
+                    {notes.length}
+                  </motion.span>
+                </span>
+              )}
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {boardOpen && (
           <>
             <motion.div className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setBoardOpen(false)} />
             <motion.div
-              className="glass sheet board-sheet"
+              className="sheet board-sheet"
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
@@ -343,12 +435,12 @@ export default function Demo({ script, topicTitle, cast, onExit, onFinish }: Pro
               dragConstraints={{ top: 0, bottom: 0 }}
               dragElastic={{ top: 0.05, bottom: 0.8 }}
               onDragEnd={(_, info) => {
-                if (info.offset.y > 100 || info.velocity.y > 500) setBoardOpen(false);
+                if (info.offset.y > 80 || info.velocity.y > 400) setBoardOpen(false);
               }}
               data-testid="board"
             >
               <div className="grabber" />
-              <div className="label">書記のボード</div>
+              <div className="label" style={{ color: ROLES[2].color }}>書記のボード</div>
               <div className="board">
                 {notes.length === 0 && <div className="empty">まだメモはありません</div>}
                 {PHASES.map((p, pi) => {
@@ -356,9 +448,9 @@ export default function Demo({ script, topicTitle, cast, onExit, onFinish }: Pro
                   if (!items.length) return null;
                   return (
                     <div key={p.name}>
-                      <div className="board-phase">{pi + 1}. {p.name}</div>
+                      <div className="board-phase">{p.name}</div>
                       {items.map((n, k) => (
-                        <motion.div key={n.i} className="note" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ ...spring, delay: k * 0.04 }}>
+                        <motion.div key={n.i} className="note" initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ ...spring, delay: k * 0.03 }}>
                           {n.note}
                         </motion.div>
                       ))}

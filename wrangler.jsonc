@@ -1,17 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "gd-demo",
-  "main": "worker/index.ts",
-  "compatibility_date": "2026-09-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": {
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
-  },
-  "ai": { "binding": "AI", "remote": true },
-  "kv_namespaces": [{ "binding": "SCRIPTS", "id": "5d348a27f7d94265a34c999337be45f9" }],
-  "vars": {
-    "AI_MODEL": "@cf/openai/gpt-oss-120b"
-  },
-  "observability": { "enabled": true }
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-09-01"
 }
