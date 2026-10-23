@@ -64,6 +64,9 @@ export const Icon = {
   Book: ({ size }: IconProps) => (
     <svg {...base(size)}><path d="M4 5.5A1.5 1.5 0 015.5 4H11v15H5.5A1.5 1.5 0 014 17.5zM20 5.5A1.5 1.5 0 0018.5 4H13v15h5.5a1.5 1.5 0 001.5-1.5z" /></svg>
   ),
+  Skip: ({ size }: IconProps) => (
+    <svg {...base(size)}><path d="M6 6l6 6-6 6M13 6l6 6-6 6" /></svg>
+  ),
   ChevronUp: ({ size }: IconProps) => (
     <svg {...base(size)}><path d="M6 15l6-6 6 6" /></svg>
   ),

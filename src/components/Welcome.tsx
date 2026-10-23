@@ -5,11 +5,11 @@ import { Icon, softSpring, spring } from "../ui";
 import { useSwipe } from "../useSwipe";
 import Avatar from "./Avatar";
 
-type Props = { onStart: () => void };
+type Props = { onStart: () => void; onSkip: () => void };
 
 const HELLOS = ["よろしく！", "一緒に見よう！", "がんばろう！", "まかせて！", "楽しみ！"];
 
-export default function Welcome({ onStart }: Props) {
+export default function Welcome({ onStart, onSkip }: Props) {
   // キャラクターが順番にあいさつする
   const [talker, setTalker] = useState(-1);
   useEffect(() => {
@@ -84,6 +84,11 @@ export default function Welcome({ onStart }: Props) {
         <motion.button className="primary" whileTap={{ scale: 0.96 }} onClick={onStart} data-testid="welcome-start">
           スタート
           <Icon.Next size={18} />
+        </motion.button>
+        <div className="skip-label">見たことがある方・すぐにデモを見たい方は</div>
+        <motion.button className="skip-btn" whileTap={{ scale: 0.96 }} onClick={onSkip} data-testid="welcome-skip">
+          スキップしてお題選択へ
+          <Icon.Skip size={18} />
         </motion.button>
       </motion.div>
     </motion.div>

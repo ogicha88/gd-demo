@@ -20,7 +20,7 @@ test.afterEach(() => {
   expect(consoleErrors, "コンソールエラーが出ていないこと").toEqual([]);
 });
 
-test("初回: スタート画面でアプリの説明と5人のキャラクターが表示される", async ({ page }) => {
+test("スタート画面でアプリの説明と5人のキャラクターが表示される", async ({ page }) => {
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
   await expect(welcome).toBeVisible();
@@ -42,7 +42,7 @@ test("初回: スタート画面でアプリの説明と5人のキャラクタ�
   await expect(page.getByTestId("guide")).toBeVisible();
 });
 
-test("初回: スタート → GDの流れ・基本・人事の視点 → 「デモを見てみる」でお題選択へ進む", async ({ page }) => {
+test("スタート → GDの流れ・基本・人事の視点 → 「デモを見てみる」でお題選択へ進む", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("welcome-start").click();
   const guide = page.getByTestId("guide");
@@ -79,14 +79,26 @@ test("初回: スタート → GDの流れ・基本・人事の視点 → 「デ
   await expect(page.getByTestId("carousel")).toBeVisible();
   await expect(guide).toHaveCount(0);
 
-  // 2回目以降はガイドを飛ばしてお題選択から始まる
+  // 2回目以降もスタート画面から始まる
   await page.reload();
-  await expect(page.getByTestId("carousel")).toBeVisible();
-  await expect(page.getByTestId("guide")).toHaveCount(0);
-  await expect(page.getByTestId("welcome")).toHaveCount(0);
+  await expect(page.getByTestId("welcome")).toBeVisible();
+  await expect(page.getByTestId("carousel")).toHaveCount(0);
 });
 
-test("初回ガイドはスキップもできる", async ({ page }) => {
+test("スタート画面の目立つスキップボタンで、すぐにお題選択へ進める", async ({ page }) => {
+  await page.goto("/");
+  const skip = page.getByTestId("welcome-skip");
+  await expect(skip).toBeVisible();
+  await expect(skip).toContainText("スキップしてお題選択へ");
+  // 枠線つきのボタンとして強調されている
+  const border = await skip.evaluate((el) => getComputedStyle(el).borderTopWidth);
+  expect(parseFloat(border)).toBeGreaterThanOrEqual(2);
+  await skip.click();
+  await expect(page.getByTestId("carousel")).toBeVisible();
+  await expect(page.getByTestId("guide")).toHaveCount(0);
+});
+
+test("ガイドの途中でもスキップできる", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("welcome-start").click();
   await page.getByTestId("guide-skip").click();
@@ -94,8 +106,8 @@ test("初回ガイドはスキップもできる", async ({ page }) => {
 });
 
 test("お題選択画面とまとめ画面から、いつでもGDの基本を見返せる", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("gd-demo:intro-seen", "1"));
   await page.goto("/");
+  await page.getByTestId("welcome-skip").click();
   await expect(page.getByTestId("carousel")).toBeVisible();
 
   // お題選択画面のボタンから開いて閉じる

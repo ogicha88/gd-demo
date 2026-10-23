@@ -128,9 +128,10 @@ export default function Guide({ mode, onDone }: Props) {
             <Icon.Close />
           </motion.button>
         ) : (
-          <button className="guide-skip" onClick={onDone} data-testid="guide-skip">
+          <motion.button className="guide-skip" whileTap={{ scale: 0.94 }} onClick={onDone} data-testid="guide-skip">
             スキップ
-          </button>
+            <Icon.Skip size={16} />
+          </motion.button>
         )}
       </div>
 

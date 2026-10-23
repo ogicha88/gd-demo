@@ -1,23 +1,4 @@
 const VIEWS_KEY = "gd-demo:views";
-const INTRO_KEY = "gd-demo:intro-seen";
-
-// 冒頭ガイドを見たかどうか（2回目以降はホームから始める）
-export const intro = {
-  seen(): boolean {
-    try {
-      return localStorage.getItem(INTRO_KEY) === "1";
-    } catch {
-      return false;
-    }
-  },
-  markSeen() {
-    try {
-      localStorage.setItem(INTRO_KEY, "1");
-    } catch {
-      /* プライベートブラウズなど */
-    }
-  },
-};
 
 // 視聴履歴は端末のブラウザ内にだけ保存する
 export const views = {

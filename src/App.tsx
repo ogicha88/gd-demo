@@ -9,7 +9,7 @@ import TopicSheet from "./components/TopicSheet";
 import { SCRIPTS } from "./scripts";
 import Guide from "./components/Guide";
 import Welcome from "./components/Welcome";
-import { intro, views as viewStore } from "./views";
+import { views as viewStore } from "./views";
 
 type Screen = "home" | "demo" | "summary";
 
@@ -21,13 +21,13 @@ export default function App() {
   const [picked, setPicked] = useState<{ type: GdType; topic: Topic } | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [replayKey, setReplayKey] = useState(0);
-  // 初回はスタート画面 → GD の基本ガイド → お題選択の順。2回目以降は「GDの基本」ボタンから見返せる
-  const [guide, setGuide] = useState<"welcome" | "intro" | "review" | null>(null);
+  // 毎回スタート画面 → GD の基本ガイド → お題選択の順に始まる（スタート画面からお題選択へスキップも可）。
+  // ガイドは「GDの基本」ボタンからいつでも見返せる
+  const [guide, setGuide] = useState<"welcome" | "intro" | "review" | null>("welcome");
   const script = picked ? SCRIPTS[picked.topic.id] : undefined;
 
   useEffect(() => {
     setViews(viewStore.load());
-    if (!intro.seen()) setGuide("welcome");
     // フォントの読み込みを待ってから表示し、スケルトンを一瞬で消さないよう最低表示時間を設ける
     // 通信が遅い場合でもフォント待ちは最大 1.5 秒で打ち切る
     const fonts = Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 1500))]);
@@ -68,15 +68,12 @@ export default function App() {
 
       <AnimatePresence mode="wait">
         {!ready && <HomeSkeleton key="sk" />}
-        {ready && guide === "welcome" && <Welcome key="welcome" onStart={() => setGuide("intro")} />}
+        {ready && guide === "welcome" && <Welcome key="welcome" onStart={() => setGuide("intro")} onSkip={() => setGuide(null)} />}
         {ready && (guide === "intro" || guide === "review") && (
           <Guide
             key={`guide-${guide}`}
             mode={guide}
-            onDone={() => {
-              intro.markSeen();
-              setGuide(null);
-            }}
+            onDone={() => setGuide(null)}
           />
         )}
         {ready && !guide && screen === "home" && (

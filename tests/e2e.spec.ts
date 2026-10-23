@@ -31,8 +31,15 @@ async function advance(page: Page) {
   }
 }
 
-async function openDemo(page: Page, topicId: string) {
+// 毎回スタート画面から始まるので、スキップしてお題選択を開く
+async function gotoHome(page: Page) {
   await page.goto("/");
+  await page.getByTestId("welcome-skip").click();
+  await expect(page.getByTestId("carousel")).toBeVisible();
+}
+
+async function openDemo(page: Page, topicId: string) {
+  await gotoHome(page);
   const typeIndex = GD_TYPES.findIndex((t) => t.topics.some((p) => p.id === topicId));
   for (let i = 0; i < typeIndex; i++) await page.locator(".dot").nth(i + 1).click();
   await page.getByTestId(`topic-${topicId}`).click();
@@ -41,9 +48,7 @@ async function openDemo(page: Page, topicId: string) {
 }
 
 let consoleErrors: string[] = [];
-test.beforeEach(async ({ page }) => {
-  // ここではガイドを見終えた人として始める（初回ガイドは guide.spec.ts で確認）
-  await page.addInitScript(() => localStorage.setItem("gd-demo:intro-seen", "1"));
+test.beforeEach(({ page }) => {
   consoleErrors = [];
   page.on("pageerror", (e) => consoleErrors.push(e.message));
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
@@ -59,12 +64,12 @@ test("JS 読み込み前から全画面スケルトンが表示される", async
   });
   await page.goto("/", { waitUntil: "commit" });
   await expect(page.locator(".boot[aria-busy=true]")).toBeVisible();
-  await expect(page.getByText("街のカフェの売上を1年で2倍にする施策を考えよ")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("welcome")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".boot")).toHaveCount(0);
 });
 
 test("ログインなしでホームが開き、5つの型と各3つのお題がある", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   await expect(page.locator(".type-card")).toHaveCount(5);
   for (const t of GD_TYPES) await expect(page.locator(".type-card h2", { hasText: t.name })).toHaveCount(1);
   await expect(page.locator(".topic-card")).toHaveCount(3);
@@ -72,7 +77,7 @@ test("ログインなしでホームが開き、5つの型と各3つのお題が
 });
 
 test("型カードを左右フリックで切り替えられる", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   const carousel = page.getByTestId("carousel");
   await expect(page.getByTestId("topic-biz-cafe")).toBeVisible();
   await flick(page, carousel, -220, 0, { x: 0.8, y: 0.5 });
@@ -84,7 +89,7 @@ test("型カードを左右フリックで切り替えられる", async ({ page 
 });
 
 test("お題シート: 5人と役割が表示され、下フリックで閉じ、上フリックでデモが始まる", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   await page.getByTestId("topic-biz-cafe").click();
   const sheet = page.getByTestId("topic-sheet");
   await expect(sheet.locator(".crowd-person")).toHaveCount(5);
@@ -216,7 +221,7 @@ test("全15お題の台本がすぐに開ける（生成待ちなし）", async 
 });
 
 test("まばたきは目を閉じる表現で、目の位置は動かない", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   await page.getByTestId("topic-biz-cafe").click();
   const av = page.locator(".crowd-person .avatar").first();
   await expect(av.locator(".av-eyes-closed path")).toHaveCount(2);
@@ -229,17 +234,18 @@ test("まばたきは目を閉じる表現で、目の位置は動かない", as
 });
 
 test("視聴済みバッジが付き、再読み込み後も残る", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   await page.getByTestId("topic-biz-cafe").click();
   await page.getByTestId("start-demo").click();
   await page.getByTestId("demo-close").click();
   await page.reload();
+  await page.getByTestId("welcome-skip").click();
   await expect(page.getByTestId("topic-biz-cafe")).toContainText("視聴済み");
   await expect(page.getByTestId("topic-biz-subsc")).not.toContainText("視聴済み");
 });
 
 test("スマホ幅で横スクロールが出ず、シートも画面内に収まる", async ({ page }) => {
-  await page.goto("/");
+  await gotoHome(page);
   await expect(page.locator(".topic-card")).toHaveCount(3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await page.getByTestId("topic-biz-cafe").click();
@@ -251,6 +257,6 @@ test("スマホ幅で横スクロールが出ず、シートも画面内に収�
 
 test("公開URLに mama-meal が含まれない", async ({ page, baseURL }) => {
   test.skip(!baseURL?.startsWith("https://"), "本番URLのときだけ確認");
-  await page.goto("/");
+  await gotoHome(page);
   expect(page.url()).not.toContain("mama-meal");
 });
