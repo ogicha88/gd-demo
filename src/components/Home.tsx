@@ -9,6 +9,7 @@ type Props = {
   typeIndex: number;
   onTypeIndex: (i: number) => void;
   onPick: (type: GdType, topic: Topic) => void;
+  onGuide: () => void;
 };
 
 function TypeCard({ type, i, pos, onTap }: { type: GdType; i: number; pos: MotionValue<number>; onTap: () => void }) {
@@ -42,7 +43,7 @@ function TypeCard({ type, i, pos, onTap }: { type: GdType; i: number; pos: Motio
   );
 }
 
-export default function Home({ views, typeIndex, onTypeIndex, onPick }: Props) {
+export default function Home({ views, typeIndex, onTypeIndex, onPick, onGuide }: Props) {
   const pos = useMotionValue(typeIndex);
   const start = useRef(typeIndex);
   const width = useRef(300);
@@ -69,6 +70,10 @@ export default function Home({ views, typeIndex, onTypeIndex, onPick }: Props) {
     >
       <div className="topbar">
         <span className="brand">GDデモ</span>
+        <motion.button className="glass guide-btn" whileTap={{ scale: 0.94 }} onClick={onGuide} data-testid="open-guide">
+          <Icon.Book size={18} />
+          GDの基本
+        </motion.button>
       </div>
 
       <motion.div

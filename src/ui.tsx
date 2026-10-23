@@ -61,6 +61,9 @@ export const Icon = {
   Bulb: ({ size }: IconProps) => (
     <svg {...base(size)} stroke="#fff"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0012 3z" /></svg>
   ),
+  Book: ({ size }: IconProps) => (
+    <svg {...base(size)}><path d="M4 5.5A1.5 1.5 0 015.5 4H11v15H5.5A1.5 1.5 0 014 17.5zM20 5.5A1.5 1.5 0 0018.5 4H13v15h5.5a1.5 1.5 0 001.5-1.5z" /></svg>
+  ),
   ChevronUp: ({ size }: IconProps) => (
     <svg {...base(size)}><path d="M6 15l6-6 6 6" /></svg>
   ),

@@ -41,7 +41,9 @@ async function openDemo(page: Page, topicId: string) {
 }
 
 let consoleErrors: string[] = [];
-test.beforeEach(({ page }) => {
+test.beforeEach(async ({ page }) => {
+  // ここではガイドを見終えた人として始める（初回ガイドは guide.spec.ts で確認）
+  await page.addInitScript(() => localStorage.setItem("gd-demo:intro-seen", "1"));
   consoleErrors = [];
   page.on("pageerror", (e) => consoleErrors.push(e.message));
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));

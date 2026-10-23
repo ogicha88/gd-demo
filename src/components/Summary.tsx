@@ -10,6 +10,7 @@ type Props = {
   topicTitle: string;
   onReplay: () => void;
   onHome: () => void;
+  onGuide: () => void;
 };
 
 const item = {
@@ -17,7 +18,7 @@ const item = {
   show: { opacity: 1, y: 0, transition: spring },
 };
 
-export default function Summary({ script, topicTitle, onReplay, onHome }: Props) {
+export default function Summary({ script, topicTitle, onReplay, onHome, onGuide }: Props) {
   const roleKeys = ROLES.map((r, s) => ({ role: r, s, keys: script.lines.filter((l) => l.s === s && l.key).map((l) => l.key!) })).filter(
     (g) => g.keys.length > 0,
   );
@@ -94,10 +95,16 @@ export default function Summary({ script, topicTitle, onReplay, onHome }: Props)
           <Icon.Replay size={18} />
           もう一度見る
         </motion.button>
-        <motion.button className="glass secondary" whileTap={{ scale: 0.96 }} onClick={onHome} data-testid="home">
-          <Icon.Home size={18} />
-          お題一覧へ
-        </motion.button>
+        <div className="row">
+          <motion.button className="glass secondary" whileTap={{ scale: 0.96 }} onClick={onGuide} data-testid="summary-guide">
+            <Icon.Book size={18} />
+            GDの基本
+          </motion.button>
+          <motion.button className="glass secondary" whileTap={{ scale: 0.96 }} onClick={onHome} data-testid="home">
+            <Icon.Home size={18} />
+            お題一覧へ
+          </motion.button>
+        </div>
       </motion.div>
     </motion.div>
   );

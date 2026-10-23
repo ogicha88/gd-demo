@@ -7,6 +7,12 @@ test("walkthrough", async ({ page }) => {
   const out = process.env.SHOT_DIR ?? "shots";
   const shot = (name: string) => page.screenshot({ path: `${out}/${name}.png` });
   await page.goto("/");
+  for (let i = 0; i < 3; i++) {
+    await page.getByTestId(`guide-page-${i}`).waitFor();
+    await page.waitForTimeout(900);
+    await shot(`00-guide-${i}`);
+    await page.getByTestId("guide-next").click();
+  }
   await page.getByTestId("topic-biz-cafe").waitFor();
   await page.waitForTimeout(800);
   await shot("01-home");
